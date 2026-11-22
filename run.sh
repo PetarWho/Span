@@ -1,3 +1,5 @@
 #!/bin/sh
 cd "$(dirname "$0")"
-exec python3 span.py "$@"
+PY=python3
+[ -x "$HOME/.span-venv/bin/python3" ] && PY="$HOME/.span-venv/bin/python3"
+exec "$PY" span.py "$@"

@@ -20,6 +20,7 @@ How it works
     paths are sanitised so nothing can be written outside the download folder.
 """
 import argparse
+import errno
 import hashlib
 import hmac
 import importlib
@@ -124,6 +125,11 @@ def friendly(e):
         return "unknown computer name or address"
     if isinstance(e, (ConnectionResetError, BrokenPipeError, ConnectionAbortedError)):
         return "the connection was closed by the other computer"
+    if isinstance(e, OSError) and e.errno in (errno.EHOSTUNREACH, errno.ENETUNREACH):
+        if sys.platform == "darwin":  # macOS 15+ blocks local connections until the user allows them
+            return ("can't reach the other computer - on a Mac, allow Local Network access for Span "
+                    "(or Terminal/Python) in System Settings > Privacy & Security > Local Network")
+        return "can't reach the other computer - check that both are on the same network"
     return str(e) or type(e).__name__
 
 
@@ -264,6 +270,11 @@ def install_crypto(packages=("cryptography",)):
         return False, str(e)
     if r.returncode != 0:
         out = r.stdout + r.stderr
+        if ("externally-managed" in out or "No module named pip" in out) and sys.platform == "darwin":
+            return False, ("This Python (probably Homebrew's) doesn't allow pip installs. Either install "
+                           "Python from python.org, or create a virtual environment once:\n"
+                           "  python3 -m venv ~/.span-venv && ~/.span-venv/bin/pip install cryptography PySide6\n"
+                           "run.command uses it automatically after that.")
         if "externally-managed" in out or "No module named pip" in out:
             return False, ("Install them with your package manager instead:\n"
                            "  Debian/Ubuntu: sudo apt install python3-cryptography python3-pyside6.qtwidgets\n"
@@ -429,9 +440,35 @@ def firewall_status(cfg=None):
             if kind == "ufw":  # ufw's rule list needs root to read; remember what we did
                 return "ok" if (cfg or {}).get("ufw_rules_added") else "missing"
             return "none"
+        if sys.platform == "darwin":
+            if not os.path.exists(MAC_FW):
+                return "unknown"
+            state = _run([MAC_FW, "--getglobalstate"]).stdout.lower()
+            if "disabled" in state or "state = 0" in state:
+                return "none"
+            for exe in _mac_app_binaries():
+                out = _run([MAC_FW, "--getappblocked", exe]).stdout.lower()
+                if "not blocked" not in out and "permitted" not in out:
+                    return "missing"
+            return "ok"
     except OSError:
         pass
     return "unknown"
+
+
+# macOS's firewall works per application, not per port.
+MAC_FW = "/usr/libexec/ApplicationFirewall/socketfilterfw"
+
+
+def _mac_app_binaries():
+    """The binaries macOS's application firewall sees when Span listens."""
+    exe = Path(sys.executable).resolve()
+    found = [exe]
+    # python.org builds run through a Python.app stub inside the framework
+    stub = exe.parent.parent / "Resources" / "Python.app" / "Contents" / "MacOS" / "Python"
+    if stub.exists():
+        found.append(stub.resolve())
+    return list(dict.fromkeys(str(p) for p in found))
 
 
 def _run_elevated_windows(exe, params):
@@ -480,6 +517,25 @@ def firewall_allow(cfg, use_terminal=False):
         if firewall_status() == "ok":
             return True, "Allowed through Windows Firewall (local network only)."
         return False, f"netsh failed (exit code {rc})"
+
+    if sys.platform == "darwin":
+        import shlex
+        script = " ; ".join(f"{MAC_FW} --add {shlex.quote(b)} ; {MAC_FW} --unblockapp {shlex.quote(b)}"
+                            for b in _mac_app_binaries())
+        if use_terminal and shutil.which("sudo"):
+            argv = ["sudo", "sh", "-c", script]
+        else:  # the standard macOS administrator password dialog
+            escaped = script.replace("\\", "\\\\").replace('"', '\\"')
+            argv = ["osascript", "-e", f'do shell script "{escaped}" with administrator privileges']
+        try:
+            r = subprocess.run(argv, capture_output=not use_terminal, text=True)
+        except OSError as e:
+            return False, str(e)
+        if r.returncode == 0:
+            return True, "Allowed through the macOS firewall."
+        if "-128" in (r.stderr or ""):  # user pressed Cancel
+            return False, "administrator permission was not given"
+        return False, (r.stderr or "").strip()[-400:] or f"exit code {r.returncode}"
 
     kind = _linux_firewall()
     if kind == "firewalld":
@@ -1967,7 +2023,7 @@ def run_gui(classic=False):
                  "tkinter (sudo apt install python3-tk), or use the command line: python span.py --help")
     root = tk.Tk()
     try:
-        ttk.Style(root).theme_use("vista" if sys.platform.startswith("win") else "clam")
+        ttk.Style(root).theme_use({"win32": "vista", "darwin": "aqua"}.get(sys.platform, "clam"))
     except tk.TclError:
         pass
     try:

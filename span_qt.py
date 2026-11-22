@@ -6,6 +6,7 @@ Drag items across to copy them in either direction.
 """
 import importlib
 import json
+import re
 import os
 import sys
 import threading
@@ -95,9 +96,18 @@ def display_font(size, weight=QFont.Weight.DemiBold):
 FONTS = {}
 
 
+# macOS renders points at 72 dpi, so the same pt size looks ~25% smaller than on
+# Windows/Linux. Scale every size up there so the type hierarchy looks the same.
+SCALE = 1.3 if sys.platform == "darwin" else 1.0
+
+
+def pt(size):
+    return f"{size * SCALE:.1f}pt"
+
+
 def stylesheet():
     t = dict(C, ui=FONTS["ui"], display=FONTS["display"])
-    return """
+    css = """
     QWidget {{ font-family: "{ui}"; font-size: 10pt; color: {ink}; }}
     QMainWindow, #root {{ background: {paper}; }}
     QToolTip {{ background: {bridge}; color: {bridge_ink}; border: none; padding: 4px 6px; }}
@@ -164,6 +174,7 @@ def stylesheet():
     #codeBox {{ background: {paper}; border-radius: 8px; }}
     QPlainTextEdit {{ background: {surface}; border: 1px solid {line}; border-radius: 6px; }}
     """.format(**t)
+    return re.sub(r"(\d+(?:\.\d+)?)pt", lambda m: pt(float(m.group(1))), css)
 
 
 def repolish(w):
@@ -174,7 +185,7 @@ def repolish(w):
 
 def drag_pixmap(text, color):
     f = QFont(FONTS["ui"])
-    f.setPointSizeF(9.5)
+    f.setPointSizeF(9.5 * SCALE)
     fm = QFontMetrics(f)
     w, h = fm.horizontalAdvance(text) + 28, fm.height() + 14
     pm = QPixmap(w, h)
@@ -295,7 +306,7 @@ class TransferRow(QFrame):
         h.setSpacing(8)
         arrow = QLabel("→" if to_remote else "←")
         arrow.setStyleSheet(f"color: {'#6E95F0' if to_remote else '#3FC4A3'}; "
-                            f"font-family: '{FONTS['display']}'; font-size: 15pt;")
+                            f"font-family: '{FONTS['display']}'; font-size: {pt(15)};")
         arrow.setAccessibleName("to the other computer" if to_remote else "to this computer")
         h.addWidget(arrow, 0, Qt.AlignmentFlag.AlignTop)
         v = QVBoxLayout()
@@ -936,8 +947,10 @@ class MainWindow(QMainWindow):
         self.devices.itemDoubleClicked.connect(lambda _i: self._connect_selected())
         self.devices.itemActivated.connect(lambda _i: self._connect_selected())
         pv.addWidget(self.devices, 1)
-        self.no_devices = QLabel("No computers found yet. Open Span on the other computer, "
-                                 "or type its address below.")
+        self.no_devices = QLabel(
+            "No computers found yet. Open Span on the other computer, or type its address below."
+            + (" On a Mac, also allow Local Network access in System Settings > Privacy & Security."
+               if sys.platform == "darwin" else ""))
         self.no_devices.setObjectName("hint")
         self.no_devices.setWordWrap(True)
         pv.addWidget(self.no_devices)
@@ -1023,7 +1036,7 @@ class MainWindow(QMainWindow):
             self.local_path.setText(self.local.path)
             return
         self.local.set_path(path)
-        self.local_path.setText(path or "This PC")
+        self.local_path.setText(path or "This computer")
 
     def local_up(self):
         p = self.local.path
@@ -1337,9 +1350,10 @@ class MainWindow(QMainWindow):
         self.fw_btn.setVisible(status == "missing")
         if status == "missing" and offer and not self.cfg.get("firewall_declined"):
             r = QMessageBox.question(
-                self, core.APP, "Other computers can't reach this one until the firewall allows "
-                                "Span (ports 50505-50506, local network only).\n\n"
-                                "Allow it now? You'll be asked for administrator permission.")
+                self, core.APP, "Other computers can't reach this one until the firewall allows Span"
+                                + (" to accept incoming connections" if sys.platform == "darwin"
+                                   else " (ports 50505-50506, local network only)")
+                                + ".\n\nAllow it now? You'll be asked for administrator permission.")
             if r == QMessageBox.StandardButton.Yes:
                 self._firewall_allow()
             else:
@@ -1388,13 +1402,15 @@ def main(core_module=None):
     app = QApplication.instance() or QApplication(sys.argv)
     app.setApplicationName(core.APP)
     app.setDesktopFileName("span")  # matches the .desktop file on Linux
-    icon_file = core.asset("icon.ico" if sys.platform.startswith("win") else "icon.png")
+    icon_file = core.asset({"win32": "icon.ico", "darwin": "icon-512.png"}.get(sys.platform, "icon.png"))
     if icon_file.exists():
         app.setWindowIcon(QIcon(str(icon_file)))
-    FONTS["ui"] = pick_font(["Segoe UI Variable Text", "Segoe UI", "Inter", "Cantarell", "Noto Sans", "Ubuntu"],
-                            app.font().family())
-    FONTS["display"] = pick_font(["Bahnschrift", "Barlow", "Barlow Semi Condensed", "Noto Sans Display",
-                                  "DejaVu Sans Condensed"], FONTS["ui"])
+    # Windows, then macOS, then common Linux faces
+    FONTS["ui"] = pick_font(["Segoe UI Variable Text", "Segoe UI", ".AppleSystemUIFont", "Helvetica Neue",
+                             "Inter", "Cantarell", "Noto Sans", "Ubuntu"], app.font().family())
+    # DIN-style display face: Bahnschrift ships with Windows, DIN Alternate with macOS
+    FONTS["display"] = pick_font(["Bahnschrift", "DIN Alternate", "Barlow", "Barlow Semi Condensed",
+                                  "Noto Sans Display", "DejaVu Sans Condensed"], FONTS["ui"])
     app.setStyle("Fusion")  # consistent base on Windows and Linux; the stylesheet does the rest
     app.setStyleSheet(stylesheet())
     BUS = Bus()

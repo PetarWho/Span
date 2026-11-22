@@ -2,7 +2,7 @@
 
 <img src="assets/icon.png" width="96" align="right" alt="">
 
-Copy files and folders between Windows and Linux computers, encrypted.
+Copy files and folders between Windows, macOS and Linux computers, encrypted.
 
 ![The two-pane window: this computer on the left, the other computer on the right, transfers in the middle](assets/screenshot.png)
 
@@ -10,7 +10,7 @@ Your folders are on the left, the other computer's shared folder is on the right
 It works on your local network out of the box. If you add your own relay server, it also works between different locations.
 
 - **Two-pane window**: browse this computer on the left and the other computer's shared folder on the right.
-  Drag from left to right to send, and from right to left to download. You can also drop files from Explorer or your Linux file manager straight onto the right pane.
+  Drag from left to right to send, and from right to left to download. You can also drop files from Explorer, Finder or your Linux file manager straight onto the right pane.
 - **Shares one folder only**: each computer chooses one folder to share (by default `Downloads/Span`).
   Another computer can open it only after you click **Allow**, and it can't see anything outside that folder.
 - **Finds other computers automatically**: any computer running the app on your network shows up in the list by name.
@@ -24,22 +24,32 @@ It works on your local network out of the box. If you add your own relay server,
 
 ## Requirements
 
-- Python 3.8 or newer on both computers (python.org on Windows; usually preinstalled on Linux).
+- Python 3.8 or newer on each computer.
+  - **Windows** and **macOS**: install it from [python.org](https://www.python.org/downloads/).
+  - **Linux**: usually already installed.
 - Two free packages: `cryptography` (encryption) and `PySide6` (the window, about 70 MB).
   **The app offers to install them the first time you open it.** To install them yourself:
   `python -m pip install cryptography PySide6`.
   On Linux distributions that block pip, use your package manager (for example `sudo apt install python3-cryptography python3-pyside6.qtwidgets`) or a virtual environment.
+  On a Mac with Homebrew's Python, which also blocks pip, create a virtual environment once.
+  `run.command` and `run.sh` use it automatically:
+  `python3 -m venv ~/.span-venv && ~/.span-venv/bin/pip install cryptography PySide6`
 - If PySide6 can't be installed, the app falls back to a simpler window (`python span.py gui --classic`). That window needs `python3-tk` on Linux.
 
 ## Usage
 
 Start the app on **both** computers:
 
-| | Windows | Linux |
+| Windows | macOS | Linux |
 |---|---|---|
-| Window | double-click `run.bat` (or `python span.py`) | `./run.sh` (or `python3 span.py`) |
+| double-click `run.bat` (or `python span.py`) | double-click `run.command` (or `python3 span.py`) | `./run.sh` (or `python3 span.py`) |
 
 The first time it starts, the app asks to allow itself through the firewall. Click **Yes**, then approve the administrator prompt.
+
+**On a Mac, the first time:**
+- **Opening `run.command`:** macOS blocks downloaded scripts, so right-click it and choose **Open**.
+- **Local Network access:** macOS 15 and later also asks whether Span (or Terminal, if you started it there) may find devices on your local network. Click **Allow**.
+  Without it, Span can't see or reach other computers. You can change it later in System Settings > Privacy & Security > Local Network.
 
 To copy files:
 
@@ -78,6 +88,8 @@ When it starts, it checks whether the firewall allows these ports. If not, it of
 - **Windows**: the app adds two Windows Firewall rules named "Span". They allow these ports only from your local subnet and from Tailscale addresses (100.64.0.0/10).
   The rules apply on every network type, because Windows often marks home Wi-Fi as "Public".
   To remove them: `netsh advfirewall firewall delete rule name="Span (TCP)"` (and the same with `(UDP)`).
+- **macOS**: the macOS firewall works per app rather than per port. If it's turned on, Span asks for your administrator password once and adds itself to the allowed apps.
+  If the firewall is off, which is the macOS default, nothing needs to change.
 - **Linux**: if `ufw` or `firewalld` is active, the app opens the ports using `pkexec` (a graphical password prompt), or `sudo` from the command line.
   If neither is active, nothing needs to change.
 
@@ -140,11 +152,14 @@ It doesn't protect your files; the end-to-end encryption does that. Use a passwo
 pip install pyinstaller cryptography PySide6
 # Windows
 pyinstaller --onefile --windowed --name Span --icon assets/icon.ico --add-data "assets;assets" span.py
+# macOS (creates Span.app)
+pyinstaller --windowed --name Span --icon assets/icon.icns --add-data "assets:assets" span.py
 # Linux
 pyinstaller --onefile --windowed --name span --add-data "assets:assets" span.py
 ```
 
 The result is in `dist/`. Build on each OS you want a binary for.
+The Mac app isn't signed, so the first time, right-click `Span.app` and choose **Open**.
 
 ### Linux menu entry (optional)
 
@@ -162,7 +177,7 @@ Categories=Network;FileTransfer;
 ### App icon
 
 The icon is drawn in code by `tools/make_icon.py`: a file crossing between a blue and a green pane, the same colours the window uses for "this computer" and "the other computer".
-Run `python tools/make_icon.py` to regenerate the files in `assets/`.
+Run `python tools/make_icon.py` to regenerate the files in `assets/`: `icon.ico` for Windows, `icon.icns` for macOS, and PNGs for Linux.
 
 ## Security details
 

@@ -1,4 +1,4 @@
-"""Draws the Span icon and writes assets/icon.png + assets/icon.ico.
+"""Draws the Span icon and writes assets/icon.png, icon.ico (Windows) and icon.icns (macOS).
 
 The icon shows what the app does: a file being dragged across the gap between
 two panes - cobalt for this computer, jade for the other - on the graphite of
@@ -20,13 +20,20 @@ GRAPHITE_TOP, GRAPHITE_BOTTOM = QColor("#2F353E"), QColor("#21252C")
 COBALT, JADE = QColor("#6E95F0"), QColor("#3FC4A3")
 
 
-def draw(size):
+def draw(size, mac=False):
     img = QImage(size, size, QImage.Format.Format_ARGB32_Premultiplied)
     img.fill(Qt.GlobalColor.transparent)
     p = QPainter(img)
     p.setRenderHint(QPainter.RenderHint.Antialiasing)
     s = size / 256.0
     p.scale(s, s)  # draw on a 256 grid
+    if mac:
+        # Apple's icon grid: the tile is 824/1024 of the canvas, centred, so
+        # Span sits at the same visual size as other apps in the Dock
+        k = (824 / 1024) / (240 / 256)
+        p.translate(128, 128)
+        p.scale(k, k)
+        p.translate(-128, -128)
 
     margin = 8 if size >= 32 else 2  # small sizes use the full canvas
     tile = QRectF(margin, margin, 256 - 2 * margin, 256 - 2 * margin)
@@ -103,6 +110,22 @@ def write_ico(path, images):
     path.write_bytes(header + table + data)
 
 
+# .icns entries: (type code, pixel size). PNG data is valid for all of these
+# on macOS 10.7+; the 2x types are the Retina versions of the smaller sizes.
+ICNS_TYPES = (("icp4", 16), ("icp5", 32), ("ic11", 32), ("icp6", 64), ("ic12", 64), ("ic07", 128),
+              ("ic13", 256), ("ic08", 256), ("ic14", 512), ("ic09", 512), ("ic10", 1024))
+
+
+def write_icns(path):
+    """macOS .icns: 'icns' + total length, then (type, length, PNG) chunks."""
+    cache, chunks = {}, b""
+    for code, size in ICNS_TYPES:
+        if size not in cache:
+            cache[size] = png_bytes(draw(size, mac=True))
+        chunks += code.encode("ascii") + struct.pack(">I", 8 + len(cache[size])) + cache[size]
+    path.write_bytes(b"icns" + struct.pack(">I", 8 + len(chunks)) + chunks)
+
+
 def main():
     app = QGuiApplication.instance() or QGuiApplication(sys.argv)  # noqa: F841 - needed for painting
     OUT.mkdir(exist_ok=True)
@@ -110,6 +133,7 @@ def main():
     images[-1].save(str(OUT / "icon.png"))
     draw(512).save(str(OUT / "icon-512.png"))
     write_ico(OUT / "icon.ico", images)
+    write_icns(OUT / "icon.icns")
     # preview strip of the small sizes, for checking legibility
     strip = QImage(sum(SIZES[:6]) + 10 * 7, 60, QImage.Format.Format_ARGB32)
     strip.fill(QColor("#F2F4F6"))
