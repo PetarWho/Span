@@ -156,8 +156,13 @@ jobs:
           KEY_PW: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           if [ -z "$KEYSTORE_B64" ]; then echo "::error::Signing secrets are missing"; exit 1; fi
-          echo "$KEYSTORE_B64" | base64 -d > release.jks
-          printf 'storeFile=release.jks\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' "$STORE_PW" "$KEY_ALIAS" "$KEY_PW" > key.properties
+          # strip stray line endings/spaces a secret may have picked up when it was pasted
+          clean() { printf '%s' "$1" | tr -d '\r\n'; }
+          clean "$KEYSTORE_B64" | tr -d ' ' | base64 -d > release.jks
+          printf 'storeFile=release.jks\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
+            "$(clean "$STORE_PW")" "$(clean "$KEY_ALIAS")" "$(clean "$KEY_PW")" > key.properties
+          keytool -list -keystore release.jks -storepass "$(clean "$STORE_PW")" > /dev/null \
+            || { echo "::error::The keystore secret or its password is wrong"; exit 1; }
 
       - name: Build APK
         run: |
