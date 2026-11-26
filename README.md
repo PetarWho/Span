@@ -2,7 +2,7 @@
 
 <img src="assets/icon.png" width="96" align="right" alt="">
 
-Copy files and folders between Windows, macOS and Linux computers, encrypted.
+Copy files and folders between Windows, macOS and Linux computers and Android phones, encrypted.
 
 ![The two-pane window: this computer on the left, the other computer on the right, transfers in the middle](assets/screenshot.png)
 
@@ -21,6 +21,7 @@ It works on your local network out of the box. If you add your own relay server,
 - **Sets up the firewall for you**: on first run the app offers to allow itself through the firewall. You just approve the admin prompt.
 - **Optional relay**: off by default. Turn it on to reach computers in other places.
 - **Has a window and a command line**: the command line suits servers and SSH sessions.
+- **Android app**: open a computer's shared folder from your phone, send files with "Share > Span" from any app, and let computers open the phone's Span folder. See [Android](#android).
 
 ## Requirements
 
@@ -79,6 +80,32 @@ python span.py gui --classic           # the simple single-window app
 ```
 
 Files sent from the command line land in the receiver's shared folder.
+
+## Android
+
+The Android app is in [`mobile/`](mobile). It's built with Flutter and speaks exactly the same encrypted protocol, so phones and computers work together.
+
+**Install it:** download `Span.apk` from the [releases page](https://github.com/PetarWho/Span/releases) or build it yourself (below), open it on the phone, and allow installing from that source when Android asks.
+
+**Using it:**
+- **From the phone:** open Span. Computers running Span on the same Wi-Fi appear under **Other computers**. Tap one; the computer asks whether to allow it, and both screens show the same verification code.
+  Then tap a folder to open it, tap a file to download it, or long-press to select several. **Send files here** uploads from the phone.
+- **Share > Span:** in any app (Photos, Files, ...), share one or more files, pick **Span**, then choose the open folder or a computer. A computer you haven't opened is asked to accept.
+- **From a computer:** the phone appears in the computer's list like any other computer. Opening it asks the phone to allow access to its **Span folder** (`Download/Span`), which is also where received files are saved.
+- **Away from home:** turn on the relay in the app's settings, with the same address and password as your computers.
+
+**Good to know:**
+- Keep Span open on the phone while transferring. Android may pause it in the background.
+- A computer that opens the phone sees only the files Span itself saved in `Download/Span`. Android doesn't let apps list files that other apps put there.
+
+**Build it yourself** (needs [Flutter](https://flutter.dev)):
+
+```
+cd mobile
+flutter build apk --release        # result: build/app/outputs/flutter-apk/app-release.apk
+```
+
+`flutter test test/interop_test.dart` checks the Dart protocol against `span.py` in both directions, including through the relay. It needs Python with `cryptography`.
 
 ## Firewall
 

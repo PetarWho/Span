@@ -1,4 +1,5 @@
-"""Draws the Span icon and writes assets/icon.png, icon.ico (Windows) and icon.icns (macOS).
+"""Draws the Span icon: assets/icon.png, icon.ico (Windows), icon.icns (macOS) and the
+Android launcher icons in mobile/android.
 
 The icon shows what the app does: a file being dragged across the gap between
 two panes - cobalt for this computer, jade for the other - on the graphite of
@@ -20,7 +21,7 @@ GRAPHITE_TOP, GRAPHITE_BOTTOM = QColor("#2F353E"), QColor("#21252C")
 COBALT, JADE = QColor("#6E95F0"), QColor("#3FC4A3")
 
 
-def draw(size, mac=False):
+def draw(size, mac=False, tile=True, content_scale=1.0):
     img = QImage(size, size, QImage.Format.Format_ARGB32_Premultiplied)
     img.fill(Qt.GlobalColor.transparent)
     p = QPainter(img)
@@ -35,14 +36,19 @@ def draw(size, mac=False):
         p.scale(k, k)
         p.translate(-128, -128)
 
-    margin = 8 if size >= 32 else 2  # small sizes use the full canvas
-    tile = QRectF(margin, margin, 256 - 2 * margin, 256 - 2 * margin)
-    grad = QLinearGradient(tile.topLeft(), tile.bottomLeft())
-    grad.setColorAt(0, GRAPHITE_TOP)
-    grad.setColorAt(1, GRAPHITE_BOTTOM)
     p.setPen(Qt.PenStyle.NoPen)
-    p.setBrush(grad)
-    p.drawRoundedRect(tile, 56, 56)
+    if tile:
+        margin = 8 if size >= 32 else 2  # small sizes use the full canvas
+        rect = QRectF(margin, margin, 256 - 2 * margin, 256 - 2 * margin)
+        grad = QLinearGradient(rect.topLeft(), rect.bottomLeft())
+        grad.setColorAt(0, GRAPHITE_TOP)
+        grad.setColorAt(1, GRAPHITE_BOTTOM)
+        p.setBrush(grad)
+        p.drawRoundedRect(rect, 56, 56)
+    if content_scale != 1.0:
+        p.translate(128, 128)
+        p.scale(content_scale, content_scale)
+        p.translate(-128, -128)
 
     small = size < 32
     # the two panes: this computer (cobalt) and the other one (jade)
@@ -126,6 +132,37 @@ def write_icns(path):
     path.write_bytes(b"icns" + struct.pack(">I", 8 + len(chunks)) + chunks)
 
 
+ANDROID_RES = OUT.parent / "mobile" / "android" / "app" / "src" / "main" / "res"
+ANDROID_DENSITIES = {"mdpi": 1, "hdpi": 1.5, "xhdpi": 2, "xxhdpi": 3, "xxxhdpi": 4}
+
+
+def write_android():
+    """Adaptive launcher icon (Android 8+) plus classic PNGs for older phones.
+
+    The adaptive foreground is 108dp with only the central ~66dp guaranteed
+    visible once the phone masks it into a circle or squircle, so the artwork
+    is shrunk into that safe zone over a plain graphite background.
+    """
+    if not ANDROID_RES.exists():
+        return
+    for name, k in ANDROID_DENSITIES.items():
+        d = ANDROID_RES / f"mipmap-{name}"
+        d.mkdir(exist_ok=True)
+        draw(round(48 * k)).save(str(d / "ic_launcher.png"))
+        draw(round(108 * k), tile=False, content_scale=0.56).save(str(d / "ic_launcher_foreground.png"))
+    anydpi = ANDROID_RES / "mipmap-anydpi-v26"
+    anydpi.mkdir(exist_ok=True)
+    (anydpi / "ic_launcher.xml").write_text(
+        '<?xml version="1.0" encoding="utf-8"?>\n'
+        '<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">\n'
+        '    <background android:drawable="@color/ic_launcher_background"/>\n'
+        '    <foreground android:drawable="@mipmap/ic_launcher_foreground"/>\n'
+        '</adaptive-icon>\n', encoding="utf-8")
+    (ANDROID_RES / "values" / "ic_launcher_background.xml").write_text(
+        '<?xml version="1.0" encoding="utf-8"?>\n<resources>\n'
+        '    <color name="ic_launcher_background">#282D35</color>\n</resources>\n', encoding="utf-8")
+
+
 def main():
     app = QGuiApplication.instance() or QGuiApplication(sys.argv)  # noqa: F841 - needed for painting
     OUT.mkdir(exist_ok=True)
@@ -134,6 +171,7 @@ def main():
     draw(512).save(str(OUT / "icon-512.png"))
     write_ico(OUT / "icon.ico", images)
     write_icns(OUT / "icon.icns")
+    write_android()
     # preview strip of the small sizes, for checking legibility
     strip = QImage(sum(SIZES[:6]) + 10 * 7, 60, QImage.Format.Format_ARGB32)
     strip.fill(QColor("#F2F4F6"))
