@@ -49,6 +49,7 @@ except ImportError:  # headless Linux without python3-tk: CLI still works
     tk = None
 
 APP = "Span"
+VERSION = "1.0.0"  # set by the release workflow (VERSION file + build number)
 MAGIC = "SPAN1"
 PROTO = b"SPAN1\n"  # first bytes of every encrypted connection
 DISCOVERY_PORT = 50505
@@ -2242,8 +2243,60 @@ def cli_firewall(_args):
         sys.exit(1)
 
 
+def cli_selftest(args):
+    """Checks a packaged build has everything bundled. Used by the release workflow.
+
+    Exit code 0 means OK. The report also goes to a file, because windowed
+    builds on Windows have no console to print to.
+    """
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    report = []
+
+    def check(name, fn):
+        try:
+            fn()
+            report.append(f"ok    {name}")
+        except Exception as e:  # noqa: BLE001
+            report.append(f"FAIL  {name}: {type(e).__name__}: {e}")
+
+    def crypto():
+        if not load_crypto():
+            raise RuntimeError("cryptography is missing")
+        a, b = socket.socketpair()
+        box = {}
+        t = threading.Thread(target=lambda: box.update(srv=SecureChannel(b, is_client=False)))
+        t.start()
+        cli = SecureChannel(a, is_client=True)
+        t.join(5)
+        cli.send_json({"hello": "span"})
+        if box["srv"].recv_json() != {"hello": "span"} or cli.code != box["srv"].code:
+            raise RuntimeError("encrypted round trip failed")
+
+    def window():
+        import span_qt  # noqa: F401 - the dual-pane window module
+        from PySide6.QtWidgets import QApplication
+        QApplication.instance() or QApplication(sys.argv[:1])
+
+    def assets():
+        for name in ("icon.png", "icon-512.png", "icon.ico"):
+            if not asset(name).exists():
+                raise FileNotFoundError(asset(name))
+
+    check("encryption", crypto)
+    check("window toolkit", window)
+    check("assets", assets)
+    failed = any(line.startswith("FAIL") for line in report)
+    text = f"{APP} {VERSION} selftest: {'FAILED' if failed else 'passed'}\n" + "\n".join(report) + "\n"
+    if args.out:
+        Path(args.out).write_text(text, encoding="utf-8")
+    if sys.stdout:
+        print(text, end="")
+    sys.exit(1 if failed else 0)
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="span", description=f"{APP}: send files over your network, encrypted.")
+    ap.add_argument("--version", action="version", version=f"{APP} {VERSION}")
     sub = ap.add_subparsers(dest="cmd")
     g = sub.add_parser("gui", help="open the window (default)")
     g.add_argument("--classic", action="store_true", help="use the simple tkinter window")
@@ -2278,9 +2331,13 @@ def main(argv=None):
 
     sub.add_parser("firewall", help="allow the app through this computer's firewall")
 
+    st = sub.add_parser("selftest")  # hidden helper for the release builds
+    st.add_argument("--out", help="also write the report to this file")
+
     args = ap.parse_args(argv)
     {"receive": cli_receive, "send": cli_send, "list": cli_list, "relay": cli_relay,
-     "firewall": cli_firewall}.get(args.cmd, lambda a: run_gui(getattr(a, "classic", False)))(args)
+     "firewall": cli_firewall, "selftest": cli_selftest}.get(
+        args.cmd, lambda a: run_gui(getattr(a, "classic", False)))(args)
 
 
 if __name__ == "__main__":

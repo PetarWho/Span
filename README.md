@@ -23,6 +23,12 @@ It works on your local network out of the box. If you add your own relay server,
 - **Has a window and a command line**: the command line suits servers and SSH sessions.
 - **Android app**: open a computer's shared folder from your phone, send files with "Share > Span" from any app, and let computers open the phone's Span folder. See [Android](#android).
 
+## Download
+
+Ready-made apps for **Windows, macOS, Linux and Android** are on the [releases page](https://github.com/PetarWho/Span/releases/latest).
+They need nothing else installed. A new release is built automatically on every change to the code.
+To run from source instead, see the requirements below.
+
 ## Requirements
 
 - Python 3.8 or newer on each computer.
@@ -85,7 +91,7 @@ Files sent from the command line land in the receiver's shared folder.
 
 The Android app is in [`mobile/`](mobile). It's built with Flutter and speaks exactly the same encrypted protocol, so phones and computers work together.
 
-**Install it:** download `Span.apk` from the [releases page](https://github.com/PetarWho/Span/releases) or build it yourself (below), open it on the phone, and allow installing from that source when Android asks.
+**Install it:** download `Span.apk` from the [releases page](https://github.com/PetarWho/Span/releases/latest) or build it yourself (below), open it on the phone, and allow installing from that source when Android asks. Newer versions install over older ones and keep your settings.
 
 **Using it:**
 - **From the phone:** open Span. Computers running Span on the same Wi-Fi appear under **Other computers**. Tap one; the computer asks whether to allow it, and both screens show the same verification code.
@@ -172,6 +178,18 @@ It doesn't protect your files; the end-to-end encryption does that. Use a passwo
 
 > **No server?** If both computers run [Tailscale](https://tailscale.com), you don't need a relay.
 > Type the other computer's Tailscale IP (100.x.x.x) on the right and click **Open**. The firewall rule already allows Tailscale addresses.
+
+## How releases are built
+
+[`.github/workflows/release.yml`](.github/workflows/release.yml) runs on every push to `main`:
+
+1. **Version:** the number is `VERSION` plus the build number, for example `1.0.7`. Edit `VERSION` to start a new series.
+2. **Desktop:** Windows, macOS and Linux are built with PyInstaller on GitHub's machines. Each build runs `span selftest` (an encrypted round trip, the Qt window, the icons) before it's kept.
+3. **Android:** the interop tests run first, then the APK is built and signed with the release key from the repository secrets
+   (`ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`).
+4. **Release:** a release is published only if every build and test passed.
+
+Keep a backup of the Android signing key. If it's lost, phones can't update to new APKs and have to uninstall first.
 
 ## Make a standalone .exe / binary (optional)
 

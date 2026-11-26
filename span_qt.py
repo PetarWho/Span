@@ -790,6 +790,9 @@ class SettingsDialog(QDialog):
         v.addLayout(rform)
 
         row = QHBoxLayout()
+        version = QLabel(f"{core.APP} {core.VERSION}")
+        version.setObjectName("hint")
+        row.addWidget(version)
         row.addStretch(1)
         cancel = QPushButton("Cancel")
         save = QPushButton("Save")
